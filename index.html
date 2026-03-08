@@ -212,9 +212,6 @@
             <div class="flex items-center justify-between mb-3 gap-2">
                 <h3 class="font-bold text-sm flex-shrink-0">章节 <span id="chapter-count" class="text-gray-500 font-normal"></span></h3>
                 <div class="flex items-center gap-2 flex-1 justify-end">
-                    <button onclick="UI.scrollToCurrent()" id="btn-locate" class="ctrl-btn p-2 rounded-lg hover:bg-accent/10 text-gray-400 hover:text-accent transition hidden" title="定位当前播放">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                    </button>
                     <input id="chapter-search" type="text" placeholder="搜索…"
                            class="bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm w-32 sm:w-40 focus:outline-none focus:border-accent/50 transition"
                            oninput="UI.filterChapters(this.value)">
@@ -407,6 +404,7 @@ const State = {
     // 代理模式: 'vercel' | 'local' | 'cors'
     proxyMode: 'cors',
     session: '',  // PHPSESSID (用于 Vercel 模式)
+    _played: new Set(),  // 已播放章节索引集合
 };
 
 const LOCAL_PROXY = 'http://localhost:9275';
@@ -741,6 +739,16 @@ const Player = {
         State.speedIdx = (State.speedIdx+1) % SPEEDS.length;
         this._el.playbackRate = SPEEDS[State.speedIdx];
         $('btn-speed').textContent = SPEEDS[State.speedIdx]+'x';
+        LS.set('speedIdx', State.speedIdx);
+    },
+    /** 恢复上次的倍速 */
+    restoreSpeed() {
+        const saved = LS.get('speedIdx');
+        if (saved !== null && saved >= 0 && saved < SPEEDS.length) {
+            State.speedIdx = saved;
+            this._el.playbackRate = SPEEDS[State.speedIdx];
+            $('btn-speed').textContent = SPEEDS[State.speedIdx]+'x';
+        }
     },
     setSource(url) { this._el.src = url; State.introSkipped = false; },
     prev() { if(State.chapterIndex>0) App.loadChapter(State.chapterIndex-1); },
@@ -867,10 +875,11 @@ const UI = {
         let html = '';
         for(let i=State.chaptersShown; i<end; i++){
             const ch=chs[i], active = ch.idx===State.chapterIndex;
+            const played = State._played.has(ch.idx);
             html += `<div class="flex items-center px-3 py-3 sm:py-2.5 cursor-pointer hover:bg-white/5 transition ${active?'chapter-active':''}"
                           onclick="App.loadChapter(${ch.idx})" data-ci="${ch.idx}">
-                <span class="text-xs text-gray-500 w-9 flex-shrink-0 text-right mr-2.5">${ch.idx+1}</span>
-                <span class="text-sm truncate ${active?'text-accent font-medium':'text-gray-300'}">${this._hl(ch.name)}</span>
+                <span class="text-xs w-9 flex-shrink-0 text-right mr-2.5 ${played&&!active?'text-accent/50':'text-gray-500'}">${played&&!active?'✓':''} ${ch.idx+1}</span>
+                <span class="text-sm truncate ${active?'text-accent font-medium':played?'text-gray-500':'text-gray-300'}">${this._hl(ch.name)}</span>
                 ${active?'<span class="ml-auto text-accent text-xs flex-shrink-0 pl-2">♬</span>':''}
             </div>`;
         }
@@ -896,6 +905,10 @@ const UI = {
     },
 
     highlightCurrent() {
+        // 确保当前章节行已渲染
+        if(State.chapterIndex >= 0 && !State.searchQ) {
+            while(State.chaptersShown <= State.chapterIndex) UI.loadMoreChapters();
+        }
         document.querySelectorAll('.chapter-active').forEach(el=>{
             el.classList.remove('chapter-active');
             const s=el.querySelector('span:nth-child(2)');
@@ -908,29 +921,14 @@ const UI = {
             const s=el.querySelector('span:nth-child(2)');
             if(s){s.classList.remove('text-gray-300');s.classList.add('text-accent','font-medium');}
             if(!el.querySelector('.ml-auto')) el.insertAdjacentHTML('beforeend','<span class="ml-auto text-accent text-xs flex-shrink-0 pl-2">♬</span>');
-            el.scrollIntoView({behavior:'smooth', block:'nearest'});
+            // 滚动到列表顶部
+            const list = $('chapter-list');
+            if(list && el) { list.scrollTop = el.offsetTop - list.offsetTop; }
         }
         if(State.book && State.chapterIndex>=0){
             const ch = State.book.chapters[State.chapterIndex];
             $('now-playing').textContent = `${State.chapterIndex+1}/${State.book.chapters.length} · ${ch.name}`;
             $('mini-chapter').textContent = ch.name;
-            $('btn-locate').classList.remove('hidden');
-        }
-    },
-
-    /** 定位到当前播放章节 */
-    scrollToCurrent() {
-        if(State.chapterIndex < 0) return;
-        // 如果搜索中则清除
-        if(State.searchQ){ State.searchQ=''; $('chapter-search').value=''; this.renderChapters(); }
-        // 确保章节已加载
-        while(State.chaptersShown <= State.chapterIndex) this.loadMoreChapters();
-        const el = document.querySelector(`[data-ci="${State.chapterIndex}"]`);
-        if(el) {
-            el.scrollIntoView({behavior:'smooth', block:'center'});
-            // 闪烁提示
-            el.style.background = 'rgba(124,58,237,0.3)';
-            setTimeout(()=>{ el.style.background=''; }, 1000);
         }
     },
 
@@ -981,6 +979,7 @@ const App = {
         State.skipOutro = LS.get('skipOutro') || 0;
 
         Player.init();
+        Player.restoreSpeed();
         UI.renderHistory();
 
         // 代理选择器
@@ -1041,6 +1040,7 @@ const App = {
         if (cached?.chapters?.length) {
             console.log(`[App] ✓ 命中缓存: ${cached.title} (${cached.chapters.length}章)`);
             State.book = cached;
+            this._loadPlayed(bookUrl);
             UI.renderBookInfo(cached);
             UI.renderChapters();
             UI.showSection('player');
@@ -1066,6 +1066,7 @@ const App = {
             // ★ 保存到本地缓存 → 下次秒开 ★
             Cache.saveBook(book);
             State.book = book;
+            this._loadPlayed(bookUrl);
 
             UI.renderBookInfo(book);
             UI.renderChapters();
@@ -1102,6 +1103,17 @@ const App = {
         State.pendingResume = null;
     },
 
+    /** 保存已播放记录 */
+    _savePlayed() {
+        if(!State.book) return;
+        LS.set('played_' + Cache._hash(State.book.url), [...State._played]);
+    },
+    /** 加载已播放记录 */
+    _loadPlayed(url) {
+        const arr = LS.get('played_' + Cache._hash(url));
+        State._played = new Set(Array.isArray(arr) ? arr : []);
+    },
+
     async loadChapter(idx, isRetry=false, seekTo=0) {
         if(!State.book || idx<0 || idx>=State.book.chapters.length) return;
         if(State.loading && !isRetry) return;
@@ -1134,6 +1146,11 @@ const App = {
 
             Player.play();
             Progress.save();
+
+            // 更新状态文本 + 记录已播放
+            $('now-playing').textContent = `${idx+1}/${State.book.chapters.length} · ${ch.name}`;
+            State._played.add(idx);
+            this._savePlayed();
 
         } catch(err) {
             console.error(`[App] 章节${idx+1}失败:`, err);
