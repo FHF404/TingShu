@@ -722,9 +722,19 @@ const Player = {
         this._el.addEventListener('ended', () => this.next());
         this._el.addEventListener('play', () => { State.isPlaying=true; UI.syncPlayBtn(true); });
         this._el.addEventListener('pause', () => { State.isPlaying=false; UI.syncPlayBtn(false); });
+        this._retryCount = 0;
         this._el.addEventListener('error', () => {
-            showToast('音频加载失败，2秒后重试…','error');
-            if(State.chapterIndex>=0 && !State.loading) setTimeout(()=>App.loadChapter(State.chapterIndex, true), 2000);
+            this._retryCount++;
+            if (this._retryCount > 3) {
+                showToast('音频加载失败，已达最大重试次数', 'error', 5000);
+                this._retryCount = 0;
+                return;
+            }
+            showToast(`音频加载失败，重新获取中(${this._retryCount}/3)…`, 'error');
+            // 重新获取章节(拿新的音频URL)而不是用旧URL重试
+            if(State.chapterIndex>=0 && !State.loading) {
+                setTimeout(()=>App.loadChapter(State.chapterIndex, true), 1500);
+            }
         });
         setInterval(() => Progress.save(), 5000);
     },
@@ -750,7 +760,7 @@ const Player = {
             $('btn-speed').textContent = SPEEDS[State.speedIdx]+'x';
         }
     },
-    setSource(url) { this._el.src = url; State.introSkipped = false; },
+    setSource(url) { this._el.src = url; State.introSkipped = false; this._retryCount = 0; },
     prev() { if(State.chapterIndex>0) App.loadChapter(State.chapterIndex-1); },
     next() {
         if(!State.book) return;
