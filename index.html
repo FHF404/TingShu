@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TingShu Player - 听书增强播放器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 950: '#06060e', 900: '#0a0a14', 800: '#0f0f1a', 700: '#1a1a2e', 600: '#25253d' },
+                        accent: { DEFAULT: '#7c3aed', light: '#a78bfa', dark: '#5b21b6', glow: 'rgba(124,58,237,0.3)' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        * { scrollbar-width: thin; scrollbar-color: #7c3aed33 transparent; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #7c3aed33; border-radius: 3px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+        input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+        input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #374151; }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+            background: #7c3aed; margin-top: -5px; box-shadow: 0 0 6px rgba(124,58,237,0.5);
+        }
+        input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: #374151; border: none; }
+        input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #7c3aed; border: none; }
+        #progress-bar::-webkit-slider-runnable-track { height: 6px; }
+        #progress-bar::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -5px; }
+        #progress-bar::-moz-range-track { height: 6px; }
+        #progress-bar::-moz-range-thumb { width: 16px; height: 16px; }
+
+        @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slide-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        .toast-in { animation: slide-in 0.3s ease-out; }
+        .toast-out { animation: slide-out 0.3s ease-in forwards; }
+
+        .chapter-active { background: linear-gradient(90deg, rgba(124,58,237,0.15), transparent); border-left: 3px solid #7c3aed; }
+        .modal-backdrop { transition: opacity 0.3s; }
+        .modal-content { transition: transform 0.3s, opacity 0.3s; }
+        .modal-open .modal-backdrop { opacity: 1; }
+        .modal-open .modal-content { transform: translateY(0); opacity: 1; }
+        .search-highlight { background: rgba(124,58,237,0.3); border-radius: 2px; padding: 0 2px; }
+    </style>
+</head>
+
+<body class="bg-dark-900 text-gray-100 min-h-screen flex flex-col">
+
+<!-- Toast 容器 -->
+<div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+<!-- 主应用 -->
+<div class="flex-1 flex flex-col max-w-5xl mx-auto w-full">
+
+    <!-- 头部 -->
+    <header class="px-4 py-4 flex items-center justify-between border-b border-white/5">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-accent to-purple-400 flex items-center justify-center text-lg font-bold shadow-lg shadow-accent/20">♬</div>
+            <div>
+                <h1 class="text-lg font-bold bg-gradient-to-r from-accent-light to-purple-300 bg-clip-text text-transparent">TingShu Player</h1>
+                <p class="text-[10px] text-gray-500 -mt-0.5">听书增强播放器</p>
+            </div>
+        </div>
+        <button onclick="UI.showModal('settings-modal')" class="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition" title="设置">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        </button>
+    </header>
+
+    <!-- 代理状态提示 -->
+    <div id="proxy-status" class="hidden px-4 py-2">
+        <div id="proxy-status-inner" class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs">
+            <span id="proxy-dot" class="w-2 h-2 rounded-full flex-shrink-0"></span>
+            <span id="proxy-msg"></span>
+        </div>
+    </div>
+
+    <!-- URL 输入区 -->
+    <section id="input-section" class="px-4 py-6">
+        <div class="relative flex gap-2">
+            <input id="url-input" type="url" placeholder="输入听书网址，如 https://m.i275.com/book/63.html"
+                   class="flex-1 bg-dark-700 border border-white/10 rounded-xl px-4 py-3 text-sm placeholder-gray-500 focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition"
+                   onkeydown="if(event.key==='Enter') parseUrl()">
+            <button onclick="parseUrl()" id="parse-btn"
+                    class="bg-accent hover:bg-accent-dark px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-accent/20 hover:shadow-accent/40 transition-all whitespace-nowrap">
+                解析
+            </button>
+        </div>
+        <!-- ★ 解析历史列表 ★ -->
+        <div id="history-section" class="mt-5"></div>
+    </section>
+
+    <!-- 加载指示器 -->
+    <section id="loading-section" class="hidden px-4 py-20 text-center">
+        <div class="inline-flex flex-col items-center gap-4">
+            <div class="w-16 h-16 rounded-full border-4 border-accent/30 border-t-accent animate-spin"></div>
+            <p id="loading-text" class="text-gray-400 text-sm">正在解析页面…</p>
+        </div>
+    </section>
+
+    <!-- 播放器区域 -->
+    <section id="player-section" class="hidden flex-1 flex flex-col">
+        <!-- 书籍信息 + 播放器 -->
+        <div id="player-main" class="px-4 py-4 flex flex-col sm:flex-row gap-5 border-b border-white/5">
+            <div class="flex-shrink-0 mx-auto sm:mx-0">
+                <div class="w-40 h-40 sm:w-44 sm:h-44 rounded-2xl overflow-hidden shadow-2xl shadow-accent/10 bg-dark-700">
+                    <img id="book-cover" src="" alt="封面" class="w-full h-full object-cover">
+                </div>
+            </div>
+            <div class="flex-1 flex flex-col min-w-0">
+                <h2 id="book-title" class="text-xl font-bold truncate"></h2>
+                <p id="book-meta" class="text-sm text-gray-400 mt-1 truncate"></p>
+                <p id="now-playing" class="text-xs text-accent-light mt-2 truncate">等待播放…</p>
+
+                <!-- 进度条 -->
+                <div class="mt-4 space-y-1">
+                    <input id="progress-bar" type="range" min="0" max="100" value="0" step="0.1" class="w-full" oninput="Player.seekTo(this.value)">
+                    <div class="flex justify-between text-[11px] text-gray-500">
+                        <span id="time-current">00:00</span>
+                        <span id="time-total">00:00</span>
+                    </div>
+                </div>
+
+                <!-- 主控制按钮 -->
+                <div class="flex items-center justify-center gap-3 mt-3">
+                    <button onclick="Player.prev()" class="p-2 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="上一章">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                    <button onclick="Player.skip(-15)" class="p-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-xs font-bold" title="后退15秒">-15s</button>
+                    <button onclick="Player.toggle()" id="btn-play"
+                            class="w-14 h-14 rounded-full bg-accent hover:bg-accent-dark flex items-center justify-center shadow-lg shadow-accent/30 transition-all">
+                        <svg id="icon-play" class="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        <svg id="icon-pause" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                    </button>
+                    <button onclick="Player.skip(15)" class="p-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-xs font-bold" title="快进15秒">+15s</button>
+                    <button onclick="Player.next()" class="p-2 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="下一章">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    </button>
+                </div>
+
+                <!-- 次级控制 -->
+                <div class="flex items-center justify-between mt-3 text-xs text-gray-400">
+                    <div class="flex items-center gap-3">
+                        <button onclick="Player.cycleSpeed()" id="btn-speed" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition font-mono" title="播放速度">1.0x</button>
+                        <button onclick="UI.showModal('timer-modal')" id="btn-timer-display" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition flex items-center gap-1" title="定时关闭">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <span id="timer-label">定时</span>
+                        </button>
+                        <button onclick="UI.showModal('skip-modal')" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition" title="跳过片头/片尾">跳过</button>
+                    </div>
+                    <div class="flex items-center gap-2 w-28">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                        <input id="volume-bar" type="range" min="0" max="1" value="1" step="0.01" class="flex-1" oninput="Player.setVolume(this.value)">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 章节列表 -->
+        <div class="flex-1 flex flex-col min-h-0 px-4 py-3">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-bold text-sm">章节列表 <span id="chapter-count" class="text-gray-500 font-normal ml-1"></span></h3>
+                <div class="flex items-center gap-2">
+                    <input id="chapter-search" type="text" placeholder="搜索章节…"
+                           class="bg-dark-700 border border-white/10 rounded-lg px-3 py-1.5 text-xs w-36 focus:outline-none focus:border-accent/50 transition"
+                           oninput="UI.filterChapters(this.value)">
+                    <button onclick="UI.showModal('jump-modal')" class="text-xs text-accent hover:text-accent-light transition">跳转</button>
+                </div>
+            </div>
+            <div id="chapter-list" class="flex-1 overflow-y-auto rounded-xl bg-dark-800 border border-white/5 divide-y divide-white/5 min-h-[200px] max-h-[50vh]"></div>
+            <button id="load-more-btn" onclick="UI.loadMoreChapters()" class="hidden mt-2 text-center text-xs text-accent hover:text-accent-light py-2 transition">加载更多…</button>
+        </div>
+    </section>
+</div>
+
+<!-- 底部迷你播放器 -->
+<div id="mini-player" class="hidden fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-xl border-t border-white/5 z-50 px-4 py-2">
+    <div class="max-w-5xl mx-auto flex items-center gap-3">
+        <img id="mini-cover" src="" class="w-10 h-10 rounded-lg object-cover bg-dark-700">
+        <div class="flex-1 min-w-0">
+            <div id="mini-title" class="text-xs font-bold truncate"></div>
+            <div id="mini-chapter" class="text-[10px] text-gray-500 truncate"></div>
+        </div>
+        <button onclick="Player.toggle()" id="mini-btn-play" class="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
+            <svg id="mini-icon-play" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="mini-icon-pause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button onclick="Player.next()" class="p-1.5 text-gray-400 hover:text-white transition">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        </button>
+    </div>
+</div>
+
+<!-- ===== 设置模态框 ===== -->
+<div id="settings-modal" class="fixed inset-0 z-[90] hidden">
+    <div class="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0" onclick="UI.closeModal('settings-modal')"></div>
+    <div class="modal-content absolute bottom-0 left-0 right-0 bg-dark-700 rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto translate-y-4 opacity-0">
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <h3 class="text-lg font-bold mb-6 text-center">设置</h3>
+        <div class="space-y-5 max-w-sm mx-auto">
+            <div>
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">代理模式</label>
+                <select id="proxy-select" onchange="State.proxyMode=this.value; App.detectProxy()"
+                        class="w-full bg-dark-600 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent/50"></select>
+                <p class="text-[10px] text-gray-500 mt-1">Vercel: 部署后自动可用 · 本地代理: 运行 node proxy.js · CORS: 仅解析书籍</p>
+            </div>
+            <div>
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">自定义 Vercel 域名</label>
+                <input id="custom-proxy" type="url" placeholder="如 https://your-app.vercel.app"
+                       class="w-full bg-dark-600 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent/50"
+                       onchange="LS.set('custom_proxy', this.value)">
+                <p class="text-[10px] text-gray-500 mt-1">非同源部署时填写 Vercel 域名</p>
+            </div>
+            <div class="pt-2 border-t border-white/10 space-y-3">
+                <button onclick="Cache.clearAll(); showToast('已清除书籍缓存','success'); UI.renderHistory()" class="w-full py-3 text-yellow-400 hover:text-yellow-300 text-sm transition">清除书籍解析缓存</button>
+                <button onclick="localStorage.clear(); showToast('已清除全部数据','success'); UI.renderHistory()" class="w-full py-3 text-red-400 hover:text-red-300 text-sm transition">清除所有本地数据</button>
+            </div>
+            <button onclick="UI.closeModal('settings-modal')" class="w-full py-3 bg-accent rounded-xl text-sm font-bold hover:bg-accent-dark transition">关闭</button>
+        </div>
+    </div>
+</div>
+
+<!-- 跳过片头片尾模态框 -->
+<div id="skip-modal" class="fixed inset-0 z-[90] hidden">
+    <div class="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0" onclick="UI.closeModal('skip-modal')"></div>
+    <div class="modal-content absolute bottom-0 left-0 right-0 bg-dark-700 rounded-t-3xl p-6 translate-y-4 opacity-0">
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <h3 class="text-lg font-bold mb-6 text-center">跳过片头 / 片尾</h3>
+        <div class="space-y-5 max-w-sm mx-auto">
+            <div class="bg-dark-600 rounded-2xl p-4">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">跳过片头 (秒)</label>
+                <input id="skip-intro-input" type="number" min="0" max="300" value="0" class="w-full bg-transparent text-2xl font-bold text-accent outline-none">
+            </div>
+            <div class="bg-dark-600 rounded-2xl p-4">
+                <label class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">跳过片尾 (秒)</label>
+                <input id="skip-outro-input" type="number" min="0" max="300" value="0" class="w-full bg-transparent text-2xl font-bold text-pink-400 outline-none">
+            </div>
+            <div class="flex gap-3">
+                <button onclick="UI.closeModal('skip-modal')" class="flex-1 py-3 text-gray-400 font-bold hover:text-white transition">取消</button>
+                <button onclick="UI.saveSkip()" class="flex-1 py-3 bg-accent rounded-xl font-bold hover:bg-accent-dark transition">保存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 定时关闭模态框 -->
+<div id="timer-modal" class="fixed inset-0 z-[90] hidden">
+    <div class="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0" onclick="UI.closeModal('timer-modal')"></div>
+    <div class="modal-content absolute bottom-0 left-0 right-0 bg-dark-700 rounded-t-3xl p-6 translate-y-4 opacity-0">
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <h3 class="text-lg font-bold mb-6 text-center">定时关闭</h3>
+        <div class="grid grid-cols-3 gap-3 max-w-sm mx-auto">
+            <button onclick="SleepTimer.set(15)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">15 分钟</button>
+            <button onclick="SleepTimer.set(30)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">30 分钟</button>
+            <button onclick="SleepTimer.set(45)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">45 分钟</button>
+            <button onclick="SleepTimer.set(60)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">60 分钟</button>
+            <button onclick="SleepTimer.set(90)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">90 分钟</button>
+            <button onclick="SleepTimer.set(120)" class="py-4 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">120 分钟</button>
+        </div>
+        <div class="max-w-sm mx-auto mt-4 flex gap-2">
+            <input id="custom-timer" type="number" min="1" max="999" placeholder="自定义(分钟)"
+                   class="flex-1 bg-dark-600 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent/50">
+            <button onclick="SleepTimer.set(+$('custom-timer').value)" class="bg-accent px-5 py-3 rounded-xl text-sm font-bold hover:bg-accent-dark transition">设定</button>
+        </div>
+        <div class="max-w-sm mx-auto mt-4 flex gap-3">
+            <button onclick="SleepTimer.setEndOfChapter()" class="flex-1 py-3 bg-dark-600 rounded-xl text-sm font-medium hover:bg-accent/20 hover:text-accent transition">本章结束后停止</button>
+            <button onclick="SleepTimer.cancel(); UI.closeModal('timer-modal')" class="flex-1 py-3 text-red-400 font-medium hover:text-red-300 transition text-sm">取消定时</button>
+        </div>
+    </div>
+</div>
+
+<!-- 章节跳转模态框 -->
+<div id="jump-modal" class="fixed inset-0 z-[90] hidden">
+    <div class="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0" onclick="UI.closeModal('jump-modal')"></div>
+    <div class="modal-content absolute bottom-0 left-0 right-0 bg-dark-700 rounded-t-3xl p-6 translate-y-4 opacity-0">
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <h3 class="text-lg font-bold mb-4 text-center">跳转到章节</h3>
+        <div class="max-w-sm mx-auto flex gap-2">
+            <input id="jump-input" type="number" min="1" placeholder="章节序号"
+                   class="flex-1 bg-dark-600 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-accent/50"
+                   onkeydown="if(event.key==='Enter') UI.jumpTo()">
+            <button onclick="UI.jumpTo()" class="bg-accent px-6 py-3 rounded-xl text-sm font-bold hover:bg-accent-dark transition">跳转</button>
+        </div>
+        <p id="jump-hint" class="text-center text-xs text-gray-500 mt-2"></p>
+    </div>
+</div>
+
+<!-- 继续播放提示 -->
+<div id="resume-modal" class="fixed inset-0 z-[90] hidden">
+    <div class="modal-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0" onclick="UI.closeModal('resume-modal')"></div>
+    <div class="modal-content absolute bottom-0 left-0 right-0 bg-dark-700 rounded-t-3xl p-6 translate-y-4 opacity-0">
+        <div class="w-10 h-1 bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <h3 class="text-lg font-bold mb-2 text-center">发现播放记录</h3>
+        <p id="resume-info" class="text-center text-gray-400 text-sm mb-6"></p>
+        <div class="max-w-sm mx-auto flex gap-3">
+            <button onclick="App.resumePlay(false)" class="flex-1 py-3 bg-dark-600 rounded-xl text-sm font-medium hover:bg-white/10 transition">从头开始</button>
+            <button onclick="App.resumePlay(true)" class="flex-1 py-3 bg-accent rounded-xl text-sm font-bold hover:bg-accent-dark transition">继续播放</button>
+        </div>
+    </div>
+</div>
+
+<!-- 隐藏音频 -->
+<audio id="audio-element" preload="auto"></audio>
+
+<script>
+// =============================================================================
+// 基础工具
+// =============================================================================
+const $ = id => document.getElementById(id);
+const BASE = 'https://m.i275.com';
+const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+const PAGE_SIZE = 100;
+
+function formatTime(s) {
+    if (!s || !isFinite(s)) return '00:00';
+    const h = Math.floor(s/3600), m = Math.floor(s%3600/60), sec = Math.floor(s%60);
+    return h ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+             : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function showToast(msg, type='info', ms=3000) {
+    const c = {info:'bg-blue-600',success:'bg-green-600',error:'bg-red-600',warn:'bg-amber-600'}[type]||'bg-blue-600';
+    const el = document.createElement('div');
+    el.className = `toast-in pointer-events-auto ${c} text-white text-sm px-4 py-3 rounded-xl shadow-2xl`;
+    el.textContent = msg;
+    $('toast-container').appendChild(el);
+    setTimeout(()=>{ el.classList.replace('toast-in','toast-out'); setTimeout(()=>el.remove(),300); }, ms);
+}
+
+// =============================================================================
+// 全局状态
+// =============================================================================
+const State = {
+    book: null,
+    chapterIndex: -1,
+    isPlaying: false,
+    skipIntro: 0,
+    skipOutro: 0,
+    currentProxy: 0,
+    chaptersShown: 0,
+    searchQ: '',
+    speedIdx: 2,
+    introSkipped: false,
+    pendingResume: null,
+    loading: false,
+    endOfChapterStop: false,
+    // 代理模式: 'vercel' | 'local' | 'cors'
+    proxyMode: 'cors',
+    session: '',  // PHPSESSID (用于 Vercel 模式)
+};
+
+const LOCAL_PROXY = 'http://localhost:9275';
+// Vercel API: 同源部署时用相对路径, 否则需要填写 Vercel 域名
+const VERCEL_API = '/api/fetch';
+
+// =============================================================================
+// CORS 代理列表 (仅用于书籍页解析，播放页依赖 Vercel/本地代理)
+// =============================================================================
+const PROXIES = [
+    { name: 'CodeTabs', build: u => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), parse: r => r.text() },
+    { name: 'AllOrigins', build: u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u), parse: r => r.text() },
+    { name: 'CorsProxy.io', build: u => 'https://corsproxy.io/?' + encodeURIComponent(u), parse: r => r.text() },
+];
+
+// =============================================================================
+// 简易 localStorage 封装
+// =============================================================================
+const LS = {
+    get(k) { try { return JSON.parse(localStorage.getItem('ts_'+k)); } catch { return localStorage.getItem('ts_'+k); } },
+    set(k,v) { localStorage.setItem('ts_'+k, typeof v==='object' ? JSON.stringify(v) : String(v)); },
+    del(k) { localStorage.removeItem('ts_'+k); },
+};
+
+// =============================================================================
+// ★ 书籍解析缓存 — 解析一次，本地保存，下次秒开 ★
+// =============================================================================
+const Cache = {
+    _hash(s) { let h=0; for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;} return 'bk'+Math.abs(h).toString(36); },
+
+    /** 获取缓存的书籍数据 */
+    getBook(url) {
+        try { const d = localStorage.getItem(this._hash(url)); return d ? JSON.parse(d) : null; } catch { return null; }
+    },
+
+    /** 保存书籍数据 + 更新历史列表 */
+    saveBook(book) {
+        try {
+            localStorage.setItem(this._hash(book.url), JSON.stringify(book));
+        } catch(e) {
+            console.warn('[Cache] 存储满，清理旧缓存:', e);
+            this._cleanup();
+            try { localStorage.setItem(this._hash(book.url), JSON.stringify(book)); } catch{}
+        }
+        // 更新历史列表(仅概要信息)
+        let list = this.getList();
+        list = list.filter(h => h.url !== book.url);
+        list.unshift({ url: book.url, title: book.title, cover: book.cover, count: book.chapters.length, time: Date.now() });
+        if (list.length > 20) list.length = 20;
+        LS.set('history', list);
+    },
+
+    /** 历史列表(概要) */
+    getList() { return LS.get('history') || []; },
+
+    /** 删除单本 */
+    remove(url) {
+        localStorage.removeItem(this._hash(url));
+        let list = this.getList().filter(h => h.url !== url);
+        LS.set('history', list);
+    },
+
+    /** 清除所有书籍缓存 */
+    clearAll() {
+        const keys = [];
+        for (let i=0; i<localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k?.startsWith('bk')) keys.push(k);
+        }
+        keys.forEach(k => localStorage.removeItem(k));
+        LS.del('history');
+    },
+
+    _cleanup() {
+        const list = this.getList();
+        if (list.length > 3) {
+            list.splice(3).forEach(h => localStorage.removeItem(this._hash(h.url)));
+            LS.set('history', list);
+        }
+    }
+};
+
+// =============================================================================
+// 播放进度存储
+// =============================================================================
+const Progress = {
+    save() {
+        if (!State.book || State.chapterIndex < 0) return;
+        const a = $('audio-element');
+        LS.set('prog_' + Cache._hash(State.book.url), {
+            ci: State.chapterIndex,
+            cn: State.book.chapters[State.chapterIndex]?.name || '',
+            ct: a.currentTime || 0,
+        });
+    },
+    load(url) { return LS.get('prog_' + Cache._hash(url)); },
+};
+
+// =============================================================================
+// 网络请求 — 支持三种模式: Vercel / 本地代理 / CORS
+// =============================================================================
+const Net = {
+    /** 检测最佳代理模式 */
+    async detectMode() {
+        // 1. 尝试 Vercel API (同源部署)
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 3000);
+            const resp = await fetch(VERCEL_API + '?url=' + encodeURIComponent('https://m.i275.com/'), { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (resp.ok) {
+                const sess = resp.headers.get('X-Session');
+                if (sess) State.session = sess;
+                console.log('[Net] ✓ Vercel API 可用');
+                return 'vercel';
+            }
+        } catch { console.log('[Net] Vercel API 不可用'); }
+
+        // 2. 尝试本地代理
+        try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 2000);
+            const resp = await fetch(LOCAL_PROXY + '/ping', { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (resp.ok) {
+                console.log('[Net] ✓ 本地代理可用');
+                return 'local';
+            }
+        } catch { console.log('[Net] 本地代理不可用'); }
+
+        // 3. 回退到 CORS 代理 (仅支持书籍页)
+        console.log('[Net] 使用 CORS 代理');
+        return 'cors';
+    },
+
+    /** 核心请求: 通过当前模式获取页面 */
+    async fetchPage(url, statusCb) {
+        switch (State.proxyMode) {
+            case 'vercel': return this._fetchVercel(url, statusCb);
+            case 'local':  return this._fetchLocal(url, statusCb);
+            case 'cors':   return this._fetchCors(url, statusCb);
+        }
+    },
+
+    // ===== Vercel 模式: 无服务器函数 + 客户端 session =====
+    async _fetchVercel(url, statusCb) {
+        statusCb?.('通过 Vercel 代理获取中…');
+        const params = new URLSearchParams({ url });
+        if (State.session) params.set('session', State.session);
+        const fetchUrl = VERCEL_API + '?' + params.toString();
+        console.log(`[Net/Vercel] ${fetchUrl.substring(0, 100)}`);
+
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 20000);
+        try {
+            const resp = await fetch(fetchUrl, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            // 保存 session
+            const sess = resp.headers.get('X-Session');
+            if (sess) { State.session = sess; console.log(`[Net/Vercel] session: ${sess.substring(0,8)}...`); }
+            const html = await resp.text();
+            if (!html || html.length < 200) throw new Error('返回内容太短');
+            return html;
+        } catch(e) {
+            clearTimeout(timer);
+            if (e.name === 'AbortError') throw new Error('Vercel 超时(20s)');
+            throw e;
+        }
+    },
+
+    // ===== 本地代理模式 =====
+    async _fetchLocal(url, statusCb) {
+        statusCb?.('通过本地代理获取中…');
+        // 播放页: 先预热 session
+        if (url.includes('/play/') && State.book?.url) {
+            try {
+                const wr = await fetch(LOCAL_PROXY + '/warmup?url=' + encodeURIComponent(State.book.url), { signal: AbortSignal.timeout(15000) });
+                if (wr.ok) console.log('[Net/Local] 会话预热完成');
+            } catch {}
+        }
+        const fetchUrl = LOCAL_PROXY + '/proxy?url=' + encodeURIComponent(url);
+        console.log(`[Net/Local] ${fetchUrl.substring(0, 100)}`);
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 15000);
+        try {
+            const resp = await fetch(fetchUrl, { signal: ctrl.signal });
+            clearTimeout(timer);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const html = await resp.text();
+            if (!html || html.length < 200) throw new Error('返回内容太短');
+            if (url.includes('/play/') && (html.includes('最近上架') || html.includes('热门搜索'))) {
+                throw new Error('被重定向到首页(会话失效)');
+            }
+            return html;
+        } catch(e) {
+            clearTimeout(timer);
+            if (e.name === 'AbortError') throw new Error('本地代理超时(15s)');
+            throw e;
+        }
+    },
+
+    // ===== CORS 代理模式 (仅书籍页能用) =====
+    async _fetchCors(url, statusCb) {
+        const errs = [];
+        for (let i = 0; i < PROXIES.length; i++) {
+            const p = PROXIES[i];
+            try {
+                statusCb?.(`通过 ${p.name} 获取中…`);
+                const fetchUrl = p.build(url);
+                console.log(`[Net/CORS] ${p.name}: ${fetchUrl.substring(0, 100)}`);
+                const ctrl = new AbortController();
+                const timer = setTimeout(() => ctrl.abort(), 15000);
+                const resp = await fetch(fetchUrl, { signal: ctrl.signal });
+                clearTimeout(timer);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const html = await p.parse(resp);
+                if (!html || html.length < 200) throw new Error('返回内容太短');
+                if (url.includes('/play/') && (html.includes('最近上架') || html.includes('热门搜索'))) {
+                    throw new Error('需要会话认证(CORS代理不支持)');
+                }
+                return html;
+            } catch(e) {
+                errs.push(`${p.name}: ${e.message}`);
+                console.warn(`[Net/CORS] ${p.name} 失败:`, e.message);
+            }
+        }
+        throw new Error('所有代理均失败:\n' + errs.join('\n'));
+    },
+};
+
+// =============================================================================
+// 页面解析器
+// =============================================================================
+const Parser = {
+    parseBookPage(html, url) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        let title = (doc.querySelector('h1.text-2xl') || doc.querySelector('h1'))?.textContent?.trim() || '未知书名';
+        let cover = doc.querySelector('img[src*="xmcdn"]')?.getAttribute('src') || '';
+        let author='', narrator='', status='';
+        doc.querySelectorAll('p').forEach(p => {
+            const t=p.textContent||'', s=p.querySelector('span');
+            if(!s) return;
+            if(t.includes('作者')) author=s.textContent.trim();
+            if(t.includes('演播')) narrator=s.textContent.trim();
+            if(t.includes('状态')) status=s.textContent.trim();
+        });
+        const chapters = [];
+        doc.querySelectorAll('a[href*="/play/"]').forEach(a => {
+            const href = a.getAttribute('href');
+            if(!href) return;
+            const spans = a.querySelectorAll('span');
+            let name = spans.length>=2 ? spans[1].textContent.trim()
+                     : spans.length===1 ? spans[0].textContent.trim()
+                     : a.textContent.trim();
+            name = name.replace(/^\d+\.\s*/,'').trim() || `章节 ${chapters.length+1}`;
+            chapters.push({ name, url: href.startsWith('http') ? href : BASE+href });
+        });
+        if(!chapters.length) {
+            doc.querySelectorAll('a[href]').forEach(a => {
+                const t=a.textContent.trim(), h=a.getAttribute('href');
+                if(h && (t.match(/第.+[集章回话]/) || t.match(/^\d+[.、]/)))
+                    chapters.push({ name:t, url: h.startsWith('http')?h:BASE+h });
+            });
+        }
+        return { url, title, cover, author, narrator, status, chapters };
+    },
+
+    parsePlayPage(html) {
+        const pats = [
+            /url:\s*['"]((https?:)?\/\/[^'"]+\.(?:m4a|mp3|aac|ogg)[^'"]*)['"]/i,
+            /url:\s*['"]((https?:)?\/\/[^'"]*audiopay[^'"]*)['"]/i,
+            /url:\s*['"]((https?:)?\/\/[^'"]*xmcdn[^'"]*\.m4a[^'"]*)['"]/i,
+            /['"]((https?:)?\/\/audiopay\.cos\.tx\.xmcdn\.com[^'"]+)['"]/i,
+            /['"]((https?:)?\/\/[^'"]+\.m4a\?[^'"]*sign=[^'"]*)['"]/i,
+            /['"]((https?:)?\/\/[^'"]+\.mp3\?[^'"]*)['"]/i,
+            /<audio[^>]+src=["']([^"']+)["']/i,
+            /<source[^>]+src=["']([^"']+)["']/i,
+        ];
+        for (const p of pats) {
+            const m = html.match(p);
+            if (m?.[1]) { let u=m[1]; if(u.startsWith('//')) u='https:'+u; return u; }
+        }
+        return null;
+    }
+};
+
+// =============================================================================
+// 播放器
+// =============================================================================
+const Player = {
+    _el: null,
+
+    init() {
+        this._el = $('audio-element');
+        this._el.addEventListener('timeupdate', () => {
+            if(!this._el.duration) return;
+            $('progress-bar').value = (this._el.currentTime / this._el.duration) * 100;
+            $('time-current').textContent = formatTime(this._el.currentTime);
+            $('time-total').textContent = formatTime(this._el.duration);
+            if(State.skipOutro > 0 && this._el.duration > 0 && this._el.currentTime >= this._el.duration - State.skipOutro) {
+                this.next();
+            }
+        });
+        this._el.addEventListener('canplay', () => {
+            if(!State.introSkipped && State.skipIntro > 0 && this._el.currentTime < State.skipIntro) {
+                this._el.currentTime = State.skipIntro;
+                State.introSkipped = true;
+            }
+        });
+        this._el.addEventListener('ended', () => this.next());
+        this._el.addEventListener('play', () => { State.isPlaying=true; UI.syncPlayBtn(true); });
+        this._el.addEventListener('pause', () => { State.isPlaying=false; UI.syncPlayBtn(false); });
+        this._el.addEventListener('error', () => {
+            showToast('音频加载失败，2秒后重试…','error');
+            if(State.chapterIndex>=0 && !State.loading) setTimeout(()=>App.loadChapter(State.chapterIndex, true), 2000);
+        });
+        setInterval(() => Progress.save(), 5000);
+    },
+
+    async play() { try { await this._el.play(); } catch {} },
+    pause() { this._el.pause(); },
+    toggle() { State.isPlaying ? this.pause() : this.play(); },
+    seekTo(pct) { if(this._el.duration) this._el.currentTime = (pct/100)*this._el.duration; },
+    skip(s) { if(this._el.duration) this._el.currentTime = Math.max(0, Math.min(this._el.duration, this._el.currentTime+s)); },
+    setVolume(v) { this._el.volume = +v; },
+    cycleSpeed() {
+        State.speedIdx = (State.speedIdx+1) % SPEEDS.length;
+        this._el.playbackRate = SPEEDS[State.speedIdx];
+        $('btn-speed').textContent = SPEEDS[State.speedIdx]+'x';
+    },
+    setSource(url) { this._el.src = url; State.introSkipped = false; },
+    prev() { if(State.chapterIndex>0) App.loadChapter(State.chapterIndex-1); },
+    next() {
+        if(!State.book) return;
+        if(State.endOfChapterStop) {
+            State.endOfChapterStop=false; this.pause();
+            $('timer-label').textContent='定时'; $('btn-timer-display').classList.remove('text-accent');
+            showToast('定时停止已触发','info'); return;
+        }
+        if(State.chapterIndex < State.book.chapters.length-1) App.loadChapter(State.chapterIndex+1);
+        else { showToast('已是最后一章','info'); this.pause(); }
+    },
+};
+
+// =============================================================================
+// 定时关闭
+// =============================================================================
+const SleepTimer = {
+    _iv: null, _rem: 0,
+    set(min) {
+        if(!min||min<=0){ showToast('请输入有效时间','warn'); return; }
+        this.cancel(); this._rem = min*60; State.endOfChapterStop=false;
+        $('btn-timer-display').classList.add('text-accent');
+        this._iv = setInterval(()=>{
+            if(--this._rem<=0){ Player.pause(); this.cancel(); showToast('定时关闭已触发','info'); return; }
+            $('timer-label').textContent = `${Math.floor(this._rem/60)}:${String(this._rem%60).padStart(2,'0')}`;
+        }, 1000);
+        UI.closeModal('timer-modal');
+        showToast(`将在 ${min} 分钟后关闭`,'success');
+    },
+    setEndOfChapter() {
+        this.cancel(); State.endOfChapterStop=true;
+        $('timer-label').textContent='本章后'; $('btn-timer-display').classList.add('text-accent');
+        UI.closeModal('timer-modal'); showToast('将在本章结束后停止','success');
+    },
+    cancel() {
+        clearInterval(this._iv); this._rem=0; State.endOfChapterStop=false;
+        $('timer-label').textContent='定时'; $('btn-timer-display').classList.remove('text-accent');
+    },
+};
+
+// =============================================================================
+// UI
+// =============================================================================
+const UI = {
+    // ★★★ 解析历史渲染 ★★★
+    renderHistory() {
+        const list = Cache.getList();
+        const el = $('history-section');
+        if (!list.length) {
+            el.innerHTML = '<p class="text-xs text-gray-600">暂无解析历史 · 输入听书网址开始</p>';
+            return;
+        }
+        el.innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    解析历史
+                </h3>
+                <span class="text-[10px] text-gray-600">${list.length} 本 · 数据已缓存本地</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                ${list.map(h => {
+                    const prog = Progress.load(h.url);
+                    return `
+                    <div class="flex items-center gap-3 bg-dark-700/80 hover:bg-dark-600 border border-white/5 rounded-xl px-3 py-2.5 transition group cursor-pointer"
+                         onclick="App.quickLoad('${h.url}')">
+                        ${h.cover
+                            ? `<img src="${h.cover}" class="w-12 h-12 rounded-lg object-cover flex-shrink-0 bg-dark-600" loading="lazy">`
+                            : '<div class="w-12 h-12 rounded-lg bg-dark-600 flex items-center justify-center text-gray-600 text-lg flex-shrink-0">♬</div>'}
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-sm truncate group-hover:text-accent transition">${h.title}</div>
+                            <div class="text-[10px] text-gray-500 mt-0.5">${h.count} 章 · ${this._ago(h.time)}</div>
+                            ${prog ? `<div class="text-[10px] text-accent/70 mt-0.5 truncate">► 第${prog.ci+1}章 ${prog.cn} ${formatTime(prog.ct)}</div>` : ''}
+                        </div>
+                        <div class="flex flex-col gap-1 flex-shrink-0 items-end">
+                            <span class="text-[10px] px-2 py-0.5 rounded-md bg-green-500/10 text-green-400 font-bold">秒开</span>
+                            <button onclick="event.stopPropagation(); if(confirm('删除此缓存？')){ Cache.remove('${h.url}'); UI.renderHistory(); }"
+                                    class="text-[10px] text-gray-600 hover:text-red-400 transition">删除</button>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>`;
+    },
+
+    _ago(ts) {
+        const d = Date.now()-ts;
+        if(d<60000) return '刚刚';
+        if(d<3600000) return Math.floor(d/60000)+'分钟前';
+        if(d<86400000) return Math.floor(d/3600000)+'小时前';
+        return Math.floor(d/86400000)+'天前';
+    },
+
+    showSection(name) {
+        ['input-section','loading-section','player-section'].forEach(id => {
+            $(id).classList.toggle('hidden', id !== name+'-section');
+        });
+        if(name==='player') $('input-section').classList.remove('hidden');
+    },
+
+    renderBookInfo(book) {
+        $('book-cover').src = book.cover||'';
+        $('book-title').textContent = book.title;
+        const parts = [];
+        if(book.author) parts.push('作者: '+book.author);
+        if(book.narrator) parts.push('演播: '+book.narrator);
+        if(book.status) parts.push(book.status);
+        $('book-meta').textContent = parts.join(' · ');
+        $('chapter-count').textContent = `(共 ${book.chapters.length} 章)`;
+        $('mini-cover').src = book.cover||'';
+        $('mini-title').textContent = book.title;
+    },
+
+    renderChapters(reset=true) {
+        if(reset){ State.chaptersShown=0; $('chapter-list').innerHTML=''; }
+        this.loadMoreChapters();
+    },
+
+    loadMoreChapters() {
+        if(!State.book) return;
+        const chs = this._filtered();
+        const end = Math.min(State.chaptersShown + PAGE_SIZE, chs.length);
+        let html = '';
+        for(let i=State.chaptersShown; i<end; i++){
+            const ch=chs[i], active = ch.idx===State.chapterIndex;
+            html += `<div class="flex items-center px-3 py-2.5 cursor-pointer hover:bg-white/5 transition ${active?'chapter-active':''}"
+                          onclick="App.loadChapter(${ch.idx})" data-ci="${ch.idx}">
+                <span class="text-[11px] text-gray-500 w-10 flex-shrink-0 text-right mr-3">${ch.idx+1}</span>
+                <span class="text-sm truncate ${active?'text-accent font-medium':'text-gray-300'}">${this._hl(ch.name)}</span>
+                ${active?'<span class="ml-auto text-accent text-xs flex-shrink-0 pl-2">♬</span>':''}
+            </div>`;
+        }
+        $('chapter-list').insertAdjacentHTML('beforeend', html);
+        State.chaptersShown = end;
+        const btn = $('load-more-btn');
+        if(end<chs.length){ btn.classList.remove('hidden'); btn.textContent=`加载更多 (${end}/${chs.length})`; }
+        else btn.classList.add('hidden');
+    },
+
+    _filtered() {
+        if(!State.book) return [];
+        const q = State.searchQ.toLowerCase();
+        return State.book.chapters.map((c,i)=>({...c,idx:i})).filter(c=>!q||c.name.toLowerCase().includes(q));
+    },
+
+    filterChapters(q) { State.searchQ=q; State.chaptersShown=0; $('chapter-list').innerHTML=''; this.loadMoreChapters(); },
+
+    _hl(text) {
+        if(!State.searchQ) return text;
+        const e = State.searchQ.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+        return text.replace(new RegExp(`(${e})`,'gi'), '<span class="search-highlight">$1</span>');
+    },
+
+    highlightCurrent() {
+        document.querySelectorAll('.chapter-active').forEach(el=>{
+            el.classList.remove('chapter-active');
+            const s=el.querySelector('span:nth-child(2)');
+            if(s){s.classList.remove('text-accent','font-medium');s.classList.add('text-gray-300');}
+            el.querySelector('.ml-auto')?.remove();
+        });
+        const el = document.querySelector(`[data-ci="${State.chapterIndex}"]`);
+        if(el){
+            el.classList.add('chapter-active');
+            const s=el.querySelector('span:nth-child(2)');
+            if(s){s.classList.remove('text-gray-300');s.classList.add('text-accent','font-medium');}
+            if(!el.querySelector('.ml-auto')) el.insertAdjacentHTML('beforeend','<span class="ml-auto text-accent text-xs flex-shrink-0 pl-2">♬</span>');
+            el.scrollIntoView({behavior:'smooth', block:'nearest'});
+        }
+        if(State.book && State.chapterIndex>=0){
+            const ch = State.book.chapters[State.chapterIndex];
+            $('now-playing').textContent = `${State.chapterIndex+1}/${State.book.chapters.length} · ${ch.name}`;
+            $('mini-chapter').textContent = ch.name;
+        }
+    },
+
+    syncPlayBtn(playing) {
+        $('icon-play').classList.toggle('hidden', playing);
+        $('icon-pause').classList.toggle('hidden', !playing);
+        $('mini-icon-play').classList.toggle('hidden', playing);
+        $('mini-icon-pause').classList.toggle('hidden', !playing);
+    },
+
+    showModal(id) { const m=$(id); m.classList.remove('hidden'); requestAnimationFrame(()=>m.classList.add('modal-open')); },
+    closeModal(id) { const m=$(id); m.classList.remove('modal-open'); setTimeout(()=>m.classList.add('hidden'),300); },
+
+    saveSkip() {
+        State.skipIntro = +$('skip-intro-input').value||0;
+        State.skipOutro = +$('skip-outro-input').value||0;
+        LS.set('skipIntro', State.skipIntro);
+        LS.set('skipOutro', State.skipOutro);
+        showToast(`跳过片头 ${State.skipIntro}s，片尾 ${State.skipOutro}s`,'success');
+        this.closeModal('skip-modal');
+    },
+
+    jumpTo() {
+        const n = +$('jump-input').value;
+        if(!n||!State.book||n<1||n>State.book.chapters.length){ showToast('无效序号','warn'); return; }
+        this.closeModal('jump-modal');
+        State.searchQ=''; $('chapter-search').value='';
+        this.renderChapters();
+        while(State.chaptersShown < n) this.loadMoreChapters();
+        App.loadChapter(n-1);
+    },
+
+    setupMiniPlayer() {
+        const mp=$('mini-player'), pm=$('player-main');
+        if(!pm) return;
+        new IntersectionObserver(([e])=>{
+            mp.classList.toggle('hidden', e.isIntersecting || !State.book);
+        }, {threshold:0.1}).observe(pm);
+    },
+};
+
+// =============================================================================
+// 主应用
+// =============================================================================
+const App = {
+    async init() {
+        State.skipIntro = LS.get('skipIntro') || 0;
+        State.skipOutro = LS.get('skipOutro') || 0;
+
+        Player.init();
+        UI.renderHistory();
+
+        // 代理选择器
+        const modes = [{v:'vercel',t:'Vercel (部署后)'},{v:'local',t:'本地代理'},{v:'cors',t:'CORS (仅解析)'}];
+        $('proxy-select').innerHTML = modes.map(m=>`<option value="${m.v}">${m.t}</option>`).join('');
+        $('custom-proxy').value = LS.get('custom_proxy') || '';
+        $('skip-intro-input').value = State.skipIntro || '';
+        $('skip-outro-input').value = State.skipOutro || '';
+
+        // 键盘快捷键
+        document.addEventListener('keydown', e => {
+            if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+            switch(e.code){
+                case 'Space': e.preventDefault(); Player.toggle(); break;
+                case 'ArrowLeft': Player.skip(-5); break;
+                case 'ArrowRight': Player.skip(5); break;
+            }
+        });
+
+        // 自动检测最佳代理模式
+        await this.detectProxy();
+
+        // URL 参数
+        const u = new URLSearchParams(location.search).get('url');
+        if(u){ $('url-input').value=u; this.startParse(u); }
+
+        console.log('[App] TingShu Player 初始化完成, 模式:', State.proxyMode);
+    },
+
+    async detectProxy() {
+        State.proxyMode = await Net.detectMode();
+        $('proxy-select').value = State.proxyMode;
+        const el = $('proxy-status');
+        el.classList.remove('hidden');
+        const modeUi = {
+            vercel: { dot: 'bg-green-400', cls: 'bg-green-500/5 border border-green-500/20',
+                msg: '<span class="text-green-400 font-bold">Vercel 代理已连接</span> <span class="text-gray-500">· 手机/电脑均可播放</span>' },
+            local: { dot: 'bg-blue-400', cls: 'bg-blue-500/5 border border-blue-500/20',
+                msg: '<span class="text-blue-400 font-bold">本地代理已连接</span> <span class="text-gray-500">· 仅限本机使用</span>' },
+            cors: { dot: 'bg-amber-400', cls: 'bg-amber-500/5 border border-amber-500/20',
+                msg: '<span class="text-amber-400 font-bold">CORS 模式</span> <span class="text-gray-500">· 仅能解析书籍，播放需部署 Vercel 或运行 <code class="bg-dark-600 px-1 py-0.5 rounded text-accent-light">node proxy.js</code></span>' },
+        };
+        const m = modeUi[State.proxyMode];
+        $('proxy-dot').className = `w-2 h-2 rounded-full flex-shrink-0 ${m.dot}`;
+        $('proxy-msg').innerHTML = m.msg;
+        $('proxy-status-inner').className = `flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${m.cls}`;
+    },
+
+    quickLoad(url) { $('url-input').value=url; this.startParse(url); },
+
+    async startParse(bookUrl) {
+        bookUrl = bookUrl || $('url-input').value.trim();
+        if(!bookUrl){ showToast('请输入网址','warn'); return; }
+        if(!bookUrl.startsWith('http')) bookUrl = 'https://'+bookUrl;
+
+        // ★★★ 优先查本地缓存 → 秒开 ★★★
+        const cached = Cache.getBook(bookUrl);
+        if (cached?.chapters?.length) {
+            console.log(`[App] ✓ 命中缓存: ${cached.title} (${cached.chapters.length}章)`);
+            State.book = cached;
+            UI.renderBookInfo(cached);
+            UI.renderChapters();
+            UI.showSection('player');
+            UI.setupMiniPlayer();
+            showToast(`从缓存加载: ${cached.title}`, 'success');
+            this._checkResume(bookUrl);
+            return;
+        }
+
+        // 无缓存 → 在线获取
+        UI.showSection('loading');
+        $('parse-btn').disabled = true;
+        $('parse-btn').textContent = '解析中…';
+        const t0 = Date.now();
+
+        try {
+            const html = await Net.fetchPage(bookUrl, msg => $('loading-text').textContent = msg);
+            if(!html || html.length < 500) throw new Error('页面内容异常');
+
+            const book = Parser.parseBookPage(html, bookUrl);
+            if(!book.chapters.length) throw new Error('未找到章节，请检查URL');
+
+            // ★ 保存到本地缓存 → 下次秒开 ★
+            Cache.saveBook(book);
+            State.book = book;
+
+            UI.renderBookInfo(book);
+            UI.renderChapters();
+            UI.showSection('player');
+            UI.setupMiniPlayer();
+            UI.renderHistory();
+
+            const elapsed = ((Date.now()-t0)/1000).toFixed(1);
+            showToast(`解析完成: ${book.chapters.length}章 · ${elapsed}秒 (已缓存)`, 'success');
+            this._checkResume(bookUrl);
+
+        } catch(err) {
+            console.error('[App] 解析失败:', err);
+            showToast('解析失败: ' + err.message, 'error', 5000);
+            UI.showSection('input');
+        } finally {
+            $('parse-btn').disabled = false;
+            $('parse-btn').textContent = '解析';
+        }
+    },
+
+    _checkResume(url) {
+        const p = Progress.load(url);
+        if(p && p.ci >= 0) {
+            State.pendingResume = p;
+            $('resume-info').textContent = `上次听到: 第${p.ci+1}章「${p.cn}」(${formatTime(p.ct)})`;
+            UI.showModal('resume-modal');
+        }
+    },
+
+    resumePlay(resume) {
+        UI.closeModal('resume-modal');
+        if(resume && State.pendingResume) this.loadChapter(State.pendingResume.ci, false, State.pendingResume.ct);
+        State.pendingResume = null;
+    },
+
+    async loadChapter(idx, isRetry=false, seekTo=0) {
+        if(!State.book || idx<0 || idx>=State.book.chapters.length) return;
+        if(State.loading && !isRetry) return;
+
+        State.loading = true;
+        const ch = State.book.chapters[idx];
+        State.chapterIndex = idx;
+        UI.highlightCurrent();
+        $('now-playing').innerHTML = `<span class="inline-block w-3 h-3 border-2 border-accent/50 border-t-accent rounded-full animate-spin mr-1.5 align-middle"></span>加载中… ${idx+1}/${State.book.chapters.length} · ${ch.name}`;
+
+        try {
+            if (State.proxyMode === 'cors') {
+                throw new Error('CORS模式不支持播放。请部署到Vercel或运行 node proxy.js');
+            }
+
+            const html = await Net.fetchPage(ch.url, ()=>{});
+            const audioUrl = Parser.parsePlayPage(html);
+
+            if(!audioUrl) {
+                throw new Error('未找到音频URL，请检查代理连接');
+            }
+
+            console.log(`[App] ♬ 音频: ${audioUrl.substring(0,80)}...`);
+            Player.setSource(audioUrl);
+
+            if(seekTo > 0) {
+                const fn = () => { Player._el.currentTime = seekTo; Player._el.removeEventListener('canplay', fn); };
+                Player._el.addEventListener('canplay', fn);
+            }
+
+            Player.play();
+            Progress.save();
+
+        } catch(err) {
+            console.error(`[App] 章节${idx+1}失败:`, err);
+            const tips = State.proxyMode === 'cors'
+                ? '请部署到Vercel或运行 node proxy.js'
+                : err.message;
+            showToast('加载失败: ' + tips, 'error', 5000);
+            $('now-playing').textContent = `加载失败 · ${ch.name}`;
+        } finally {
+            State.loading = false;
+        }
+    }
+};
+
+// 全局入口
+function parseUrl() { App.startParse(); }
+document.addEventListener('DOMContentLoaded', () => App.init());
+window.addEventListener('beforeunload', () => Progress.save());
+</script>
+</body>
+</html>
