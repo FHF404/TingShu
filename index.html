@@ -2,7 +2,12 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#06060e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22TingShu%22%2C%22short_name%22%3A%22TingShu%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%2306060e%22%2C%22theme_color%22%3A%22%2306060e%22%7D">
     <title>TingShu Player - 听书增强播放器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -18,24 +23,34 @@
         }
     </script>
     <style>
-        * { scrollbar-width: thin; scrollbar-color: #7c3aed33 transparent; }
+        * { scrollbar-width: thin; scrollbar-color: #7c3aed33 transparent; -webkit-tap-highlight-color: transparent; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #7c3aed33; border-radius: 3px; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        html { overscroll-behavior: none; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            touch-action: manipulation;
+            -webkit-text-size-adjust: 100%;
+        }
 
+        /* 滑块 - 移动端更大的触摸区域 */
         input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
         input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #374151; }
         input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
-            background: #7c3aed; margin-top: -5px; box-shadow: 0 0 6px rgba(124,58,237,0.5);
+            -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+            background: #7c3aed; margin-top: -8px; box-shadow: 0 0 8px rgba(124,58,237,0.5);
         }
         input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: #374151; border: none; }
-        input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #7c3aed; border: none; }
+        input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: #7c3aed; border: none; }
+        /* 进度条更大 */
+        #progress-bar { padding: 10px 0; margin: -10px 0; }
         #progress-bar::-webkit-slider-runnable-track { height: 6px; }
-        #progress-bar::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -5px; }
+        #progress-bar::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -8px; }
         #progress-bar::-moz-range-track { height: 6px; }
-        #progress-bar::-moz-range-thumb { width: 16px; height: 16px; }
+        #progress-bar::-moz-range-thumb { width: 22px; height: 22px; }
 
         @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes slide-out { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
@@ -48,13 +63,42 @@
         .modal-open .modal-backdrop { opacity: 1; }
         .modal-open .modal-content { transform: translateY(0); opacity: 1; }
         .search-highlight { background: rgba(124,58,237,0.3); border-radius: 2px; padding: 0 2px; }
+
+        /* 迷你播放器进度条 */
+        #mini-progress-track { transition: none; }
+
+        /* 移动端适配 */
+        @media (max-width: 640px) {
+            /* 封面缩小 */
+            .cover-box { width: 100px !important; height: 100px !important; }
+            /* 章节列表全高度 */
+            #chapter-list { max-height: 60vh !important; }
+            /* 控制按钮更大的点击区 */
+            .ctrl-btn { min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
+            /* 输入框全宽 */
+            #url-input { font-size: 16px !important; } /* 防止 iOS 缩放 */
+        }
+
+        /* 安全区 - 底部迷你播放器 */
+        #mini-player { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+
+        /* 模态框安全区 */
+        .modal-content { padding-bottom: max(24px, env(safe-area-inset-bottom)) !important; }
+
+        /* 按钮 active 反馈 */
+        button:active, [onclick]:active { opacity: 0.7; transition: opacity 0.05s; }
+
+        /* 章节列表滚动优化 */
+        #chapter-list { -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+        #chapter-list > div { transition: background 0.15s; }
+        #chapter-list > div:active { background: rgba(124,58,237,0.1) !important; }
     </style>
 </head>
 
 <body class="bg-dark-900 text-gray-100 min-h-screen flex flex-col">
 
 <!-- Toast 容器 -->
-<div id="toast-container" class="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+<div id="toast-container" class="fixed top-4 left-4 right-4 sm:left-auto sm:right-4 z-[100] flex flex-col gap-2 max-w-sm sm:ml-auto pointer-events-none" style="top: max(16px, env(safe-area-inset-top))"></div>
 
 <!-- 主应用 -->
 <div class="flex-1 flex flex-col max-w-5xl mx-auto w-full">
@@ -107,92 +151,100 @@
     <!-- 播放器区域 -->
     <section id="player-section" class="hidden flex-1 flex flex-col">
         <!-- 书籍信息 + 播放器 -->
-        <div id="player-main" class="px-4 py-4 flex flex-col sm:flex-row gap-5 border-b border-white/5">
-            <div class="flex-shrink-0 mx-auto sm:mx-0">
-                <div class="w-40 h-40 sm:w-44 sm:h-44 rounded-2xl overflow-hidden shadow-2xl shadow-accent/10 bg-dark-700">
-                    <img id="book-cover" src="" alt="封面" class="w-full h-full object-cover">
+        <div id="player-main" class="px-4 py-4 border-b border-white/5">
+            <!-- 书籍头部: 封面+信息 -->
+            <div class="flex gap-4 items-start">
+                <div class="flex-shrink-0">
+                    <div class="cover-box w-28 h-28 sm:w-40 sm:h-40 rounded-2xl overflow-hidden shadow-2xl shadow-accent/10 bg-dark-700">
+                        <img id="book-cover" src="" alt="封面" class="w-full h-full object-cover">
+                    </div>
+                </div>
+                <div class="flex-1 min-w-0 pt-1">
+                    <h2 id="book-title" class="text-lg sm:text-xl font-bold leading-tight line-clamp-2"></h2>
+                    <p id="book-meta" class="text-xs sm:text-sm text-gray-400 mt-1.5 truncate"></p>
+                    <p id="now-playing" class="text-xs text-accent-light mt-2 leading-snug line-clamp-2">等待播放…</p>
                 </div>
             </div>
-            <div class="flex-1 flex flex-col min-w-0">
-                <h2 id="book-title" class="text-xl font-bold truncate"></h2>
-                <p id="book-meta" class="text-sm text-gray-400 mt-1 truncate"></p>
-                <p id="now-playing" class="text-xs text-accent-light mt-2 truncate">等待播放…</p>
 
-                <!-- 进度条 -->
-                <div class="mt-4 space-y-1">
-                    <input id="progress-bar" type="range" min="0" max="100" value="0" step="0.1" class="w-full" oninput="Player.seekTo(this.value)">
-                    <div class="flex justify-between text-[11px] text-gray-500">
-                        <span id="time-current">00:00</span>
-                        <span id="time-total">00:00</span>
-                    </div>
+            <!-- 进度条 -->
+            <div class="mt-4 space-y-1">
+                <input id="progress-bar" type="range" min="0" max="100" value="0" step="0.1" class="w-full" oninput="Player.seekTo(this.value)">
+                <div class="flex justify-between text-[11px] text-gray-500 px-0.5">
+                    <span id="time-current">00:00</span>
+                    <span id="time-total">00:00</span>
                 </div>
+            </div>
 
-                <!-- 主控制按钮 -->
-                <div class="flex items-center justify-center gap-3 mt-3">
-                    <button onclick="Player.prev()" class="p-2 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="上一章">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                    </button>
-                    <button onclick="Player.skip(-15)" class="p-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-xs font-bold" title="后退15秒">-15s</button>
-                    <button onclick="Player.toggle()" id="btn-play"
-                            class="w-14 h-14 rounded-full bg-accent hover:bg-accent-dark flex items-center justify-center shadow-lg shadow-accent/30 transition-all">
-                        <svg id="icon-play" class="w-6 h-6 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        <svg id="icon-pause" class="w-6 h-6 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                    </button>
-                    <button onclick="Player.skip(15)" class="p-2 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-xs font-bold" title="快进15秒">+15s</button>
-                    <button onclick="Player.next()" class="p-2 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="下一章">
-                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                    </button>
-                </div>
+            <!-- 主控制按钮 -->
+            <div class="flex items-center justify-center gap-2 sm:gap-3 mt-2">
+                <button onclick="Player.prev()" class="ctrl-btn p-3 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="上一章">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button onclick="Player.skip(-15)" class="ctrl-btn p-3 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-sm font-bold" title="后退15秒">-15s</button>
+                <button onclick="Player.toggle()" id="btn-play"
+                        class="w-16 h-16 rounded-full bg-accent hover:bg-accent-dark flex items-center justify-center shadow-lg shadow-accent/30 transition-all flex-shrink-0">
+                    <svg id="icon-play" class="w-7 h-7 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <svg id="icon-pause" class="w-7 h-7 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                </button>
+                <button onclick="Player.skip(15)" class="ctrl-btn p-3 rounded-full hover:bg-white/5 text-gray-400 hover:text-white transition text-sm font-bold" title="快进15秒">+15s</button>
+                <button onclick="Player.next()" class="ctrl-btn p-3 rounded-full hover:bg-white/5 text-gray-300 hover:text-white transition" title="下一章">
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                </button>
+            </div>
 
-                <!-- 次级控制 -->
-                <div class="flex items-center justify-between mt-3 text-xs text-gray-400">
-                    <div class="flex items-center gap-3">
-                        <button onclick="Player.cycleSpeed()" id="btn-speed" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition font-mono" title="播放速度">1.0x</button>
-                        <button onclick="UI.showModal('timer-modal')" id="btn-timer-display" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition flex items-center gap-1" title="定时关闭">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            <span id="timer-label">定时</span>
-                        </button>
-                        <button onclick="UI.showModal('skip-modal')" class="px-2 py-1 rounded-md hover:bg-white/5 hover:text-white transition" title="跳过片头/片尾">跳过</button>
-                    </div>
-                    <div class="flex items-center gap-2 w-28">
-                        <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-                        <input id="volume-bar" type="range" min="0" max="1" value="1" step="0.01" class="flex-1" oninput="Player.setVolume(this.value)">
-                    </div>
+            <!-- 次级控制 -->
+            <div class="flex items-center justify-center gap-4 mt-3 text-xs text-gray-400">
+                <button onclick="Player.cycleSpeed()" id="btn-speed" class="ctrl-btn px-3 py-2 rounded-lg hover:bg-white/5 hover:text-white transition font-mono" title="播放速度">1.0x</button>
+                <button onclick="UI.showModal('timer-modal')" id="btn-timer-display" class="ctrl-btn px-3 py-2 rounded-lg hover:bg-white/5 hover:text-white transition flex items-center gap-1.5" title="定时关闭">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span id="timer-label">定时</span>
+                </button>
+                <button onclick="UI.showModal('skip-modal')" class="ctrl-btn px-3 py-2 rounded-lg hover:bg-white/5 hover:text-white transition" title="跳过片头/片尾">跳过</button>
+                <div class="hidden sm:flex items-center gap-2 w-28">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                    <input id="volume-bar" type="range" min="0" max="1" value="1" step="0.01" class="flex-1" oninput="Player.setVolume(this.value)">
                 </div>
             </div>
         </div>
 
         <!-- 章节列表 -->
         <div class="flex-1 flex flex-col min-h-0 px-4 py-3">
-            <div class="flex items-center justify-between mb-3">
-                <h3 class="font-bold text-sm">章节列表 <span id="chapter-count" class="text-gray-500 font-normal ml-1"></span></h3>
-                <div class="flex items-center gap-2">
-                    <input id="chapter-search" type="text" placeholder="搜索章节…"
-                           class="bg-dark-700 border border-white/10 rounded-lg px-3 py-1.5 text-xs w-36 focus:outline-none focus:border-accent/50 transition"
+            <div class="flex items-center justify-between mb-3 gap-2">
+                <h3 class="font-bold text-sm flex-shrink-0">章节 <span id="chapter-count" class="text-gray-500 font-normal"></span></h3>
+                <div class="flex items-center gap-2 flex-1 justify-end">
+                    <input id="chapter-search" type="text" placeholder="搜索…"
+                           class="bg-dark-700 border border-white/10 rounded-lg px-3 py-2 text-sm w-32 sm:w-40 focus:outline-none focus:border-accent/50 transition"
                            oninput="UI.filterChapters(this.value)">
-                    <button onclick="UI.showModal('jump-modal')" class="text-xs text-accent hover:text-accent-light transition">跳转</button>
+                    <button onclick="UI.showModal('jump-modal')" class="ctrl-btn px-3 py-2 text-xs text-accent hover:text-accent-light transition rounded-lg hover:bg-accent/10">跳转</button>
                 </div>
             </div>
-            <div id="chapter-list" class="flex-1 overflow-y-auto rounded-xl bg-dark-800 border border-white/5 divide-y divide-white/5 min-h-[200px] max-h-[50vh]"></div>
-            <button id="load-more-btn" onclick="UI.loadMoreChapters()" class="hidden mt-2 text-center text-xs text-accent hover:text-accent-light py-2 transition">加载更多…</button>
+            <div id="chapter-list" class="flex-1 overflow-y-auto rounded-xl bg-dark-800 border border-white/5 divide-y divide-white/5 min-h-[200px] max-h-[55vh] sm:max-h-[50vh]"></div>
+            <button id="load-more-btn" onclick="UI.loadMoreChapters()" class="hidden mt-2 text-center text-sm text-accent hover:text-accent-light py-3 transition font-medium">加载更多…</button>
         </div>
     </section>
 </div>
 
 <!-- 底部迷你播放器 -->
-<div id="mini-player" class="hidden fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-xl border-t border-white/5 z-50 px-4 py-2">
-    <div class="max-w-5xl mx-auto flex items-center gap-3">
-        <img id="mini-cover" src="" class="w-10 h-10 rounded-lg object-cover bg-dark-700">
-        <div class="flex-1 min-w-0">
+<div id="mini-player" class="hidden fixed bottom-0 left-0 right-0 bg-dark-950/95 backdrop-blur-xl border-t border-white/5 z-50">
+    <!-- 进度条 -->
+    <div class="relative w-full h-1 bg-dark-700 cursor-pointer" onclick="Player.seekTo(event.offsetX/this.offsetWidth*100)">
+        <div id="mini-progress-track" class="absolute left-0 top-0 h-full bg-accent rounded-r" style="width:0%"></div>
+    </div>
+    <div class="px-4 py-2.5 max-w-5xl mx-auto flex items-center gap-3">
+        <img id="mini-cover" src="" class="w-11 h-11 rounded-lg object-cover bg-dark-700 flex-shrink-0">
+        <div class="flex-1 min-w-0" onclick="window.scrollTo({top:0,behavior:'smooth'})">
             <div id="mini-title" class="text-xs font-bold truncate"></div>
-            <div id="mini-chapter" class="text-[10px] text-gray-500 truncate"></div>
+            <div id="mini-chapter" class="text-[11px] text-gray-500 truncate"></div>
         </div>
-        <button onclick="Player.toggle()" id="mini-btn-play" class="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
-            <svg id="mini-icon-play" class="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            <svg id="mini-icon-pause" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        <button onclick="Player.prev()" class="ctrl-btn p-2.5 text-gray-400 hover:text-white transition flex-shrink-0">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
-        <button onclick="Player.next()" class="p-1.5 text-gray-400 hover:text-white transition">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+        <button onclick="Player.toggle()" id="mini-btn-play" class="w-11 h-11 rounded-full bg-accent flex items-center justify-center flex-shrink-0">
+            <svg id="mini-icon-play" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            <svg id="mini-icon-pause" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button onclick="Player.next()" class="ctrl-btn p-2.5 text-gray-400 hover:text-white transition flex-shrink-0">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
         </button>
     </div>
 </div>
@@ -650,9 +702,13 @@ const Player = {
         this._el = $('audio-element');
         this._el.addEventListener('timeupdate', () => {
             if(!this._el.duration) return;
-            $('progress-bar').value = (this._el.currentTime / this._el.duration) * 100;
+            const pct = (this._el.currentTime / this._el.duration) * 100;
+            $('progress-bar').value = pct;
             $('time-current').textContent = formatTime(this._el.currentTime);
             $('time-total').textContent = formatTime(this._el.duration);
+            // 迷你播放器进度
+            const mp = $('mini-progress-track');
+            if (mp) mp.style.width = pct + '%';
             if(State.skipOutro > 0 && this._el.duration > 0 && this._el.currentTime >= this._el.duration - State.skipOutro) {
                 this.next();
             }
@@ -809,9 +865,9 @@ const UI = {
         let html = '';
         for(let i=State.chaptersShown; i<end; i++){
             const ch=chs[i], active = ch.idx===State.chapterIndex;
-            html += `<div class="flex items-center px-3 py-2.5 cursor-pointer hover:bg-white/5 transition ${active?'chapter-active':''}"
+            html += `<div class="flex items-center px-3 py-3 sm:py-2.5 cursor-pointer hover:bg-white/5 transition ${active?'chapter-active':''}"
                           onclick="App.loadChapter(${ch.idx})" data-ci="${ch.idx}">
-                <span class="text-[11px] text-gray-500 w-10 flex-shrink-0 text-right mr-3">${ch.idx+1}</span>
+                <span class="text-xs text-gray-500 w-9 flex-shrink-0 text-right mr-2.5">${ch.idx+1}</span>
                 <span class="text-sm truncate ${active?'text-accent font-medium':'text-gray-300'}">${this._hl(ch.name)}</span>
                 ${active?'<span class="ml-auto text-accent text-xs flex-shrink-0 pl-2">♬</span>':''}
             </div>`;
