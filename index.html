@@ -709,6 +709,8 @@ const Player = {
             // 迷你播放器进度
             const mp = $('mini-progress-track');
             if (mp) mp.style.width = pct + '%';
+            // 系统通知栏进度
+            this._updatePositionState();
             if(State.skipOutro > 0 && this._el.duration > 0 && this._el.currentTime >= this._el.duration - State.skipOutro) {
                 this.next();
             }
@@ -737,6 +739,47 @@ const Player = {
             }
         });
         setInterval(() => Progress.save(), 5000);
+
+        // Media Session API — 通知栏控件
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play', () => this.play());
+            navigator.mediaSession.setActionHandler('pause', () => this.pause());
+            navigator.mediaSession.setActionHandler('previoustrack', () => this.prev());
+            navigator.mediaSession.setActionHandler('nexttrack', () => this.next());
+            navigator.mediaSession.setActionHandler('seekto', (e) => { if(e.seekTime!=null) this._el.currentTime = e.seekTime; });
+            navigator.mediaSession.setActionHandler('seekbackward', (e) => this.skip(-(e.seekOffset||15)));
+            navigator.mediaSession.setActionHandler('seekforward', (e) => this.skip(e.seekOffset||15));
+        }
+    },
+
+    /** 更新系统通知栏进度(不要每次都调用，降频) */
+    _posTimer: 0,
+    _updatePositionState() {
+        if (!('mediaSession' in navigator) || !this._el.duration) return;
+        const now = Date.now();
+        if (now - this._posTimer < 1000) return; // 每秒最多更新一次
+        this._posTimer = now;
+        try {
+            navigator.mediaSession.setPositionState({
+                duration: this._el.duration,
+                playbackRate: this._el.playbackRate,
+                position: Math.min(this._el.currentTime, this._el.duration),
+            });
+        } catch {}
+    },
+
+    /** 更新系统通知栏元数据(封面/标题/章节) */
+    updateMediaMetadata() {
+        if (!('mediaSession' in navigator) || !State.book) return;
+        const ch = State.book.chapters[State.chapterIndex];
+        if (!ch) return;
+        const artwork = State.book.cover ? [{ src: State.book.cover, sizes: '256x256', type: 'image/jpeg' }] : [];
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: ch.name,
+            artist: State.book.title,
+            album: State.book.author || State.book.narrator || '',
+            artwork,
+        });
     },
 
     async play() { try { await this._el.play(); } catch {} },
@@ -1149,6 +1192,8 @@ const App = {
             console.log(`[App] ♬ 音频: ${audioUrl.substring(0,80)}...`);
             Player.setSource(audioUrl);
 
+            // 更新系统通知栏元数据
+            Player.updateMediaMetadata();
             if(seekTo > 0) {
                 const fn = () => { Player._el.currentTime = seekTo; Player._el.removeEventListener('canplay', fn); };
                 Player._el.addEventListener('canplay', fn);
